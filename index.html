@@ -37,13 +37,13 @@
             </div>
 
             <nav class="flex-1 p-4 flex flex-col gap-2">
-                <button class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary border border-primary bg-primary/10 transition-all text-sm font-medium" data-tab="req1">
+                <button class="tab-btn active w-full flex items-center gap-3 px-4 py-3 rounded-lg text-emerald-400 border border-emerald-500 bg-emerald-500/10 transition-all text-sm font-medium" data-tab="req1">
                     <i data-lucide="trending-up" class="w-5 h-5"></i>
-                    <span>Dòng Tiền Tiếp Diễn</span>
+                    <span>Top 10 CP Mạnh Nhất</span>
                 </button>
                 <button class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 border border-transparent hover:bg-slate-800/50 transition-all text-sm font-medium" data-tab="req2">
                     <i data-lucide="zap" class="w-5 h-5"></i>
-                    <span>Cổ Phiếu Đột Biến</span>
+                    <span>Top 10 CP Tiềm Năng</span>
                 </button>
                 <button class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 border border-transparent hover:bg-slate-800/50 transition-all text-sm font-medium" data-tab="req3">
                     <i data-lucide="pie-chart" class="w-5 h-5"></i>
@@ -71,12 +71,6 @@
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-6 border-l border-slate-800/50 pl-6">
-                    <div class="flex flex-col items-end">
-                        <span class="text-xs text-slate-500 font-mono">VNINDEX 26D CHANGE</span>
-                        <span id="vnindex-val" class="text-lg font-bold text-emerald-400 font-mono">--%</span>
-                    </div>
-                </div>
             </header>
 
             <!-- Workspace Area -->
@@ -87,9 +81,9 @@
                     <div class="mb-6 flex justify-between items-end">
                         <div>
                             <h2 class="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-                                <i data-lucide="trending-up" class="text-emerald-500"></i> Top 10 Cổ Phiếu Tiếp Diễn Dòng Tiền
+                                <i data-lucide="trending-up" class="text-emerald-500"></i> Top 10 Cổ Phiếu Mạnh Nhất
                             </h2>
-                            <p class="text-slate-400 text-sm">Lọc theo 26D Change > VNINDEX, RS > 85 (3 ngày liên tiếp) và Volume > 300K</p>
+                            <p class="text-slate-400 text-sm">Lọc cổ phiếu mạnh nhất theo RS ranking, Volume > 300K và ROC 26 > VNINDEX</p>
                         </div>
                     </div>
 
@@ -103,9 +97,9 @@
                                         <th class="py-4 px-4 text-right">26D Change</th>
                                         <th class="py-4 px-4 text-right">Close</th>
                                         <th class="py-4 px-4 text-right">Volume</th>
-                                        <th id="req1-date3" class="py-4 px-4 text-right text-slate-500">D3</th>
-                                        <th id="req1-date2" class="py-4 px-4 text-right text-slate-500">D2</th>
-                                        <th id="req1-date1" class="py-4 px-4 text-right text-emerald-400">D1 (Now)</th>
+                                        <th id="req1-date3" class="py-4 px-4 text-right text-slate-500">D3 RS</th>
+                                        <th id="req1-date2" class="py-4 px-4 text-right text-slate-500">D2 RS</th>
+                                        <th id="req1-date1" class="py-4 px-4 text-right text-emerald-400">D1 (Now) RS</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-req1" class="text-sm">
@@ -121,9 +115,9 @@
                     <div class="mb-6 flex justify-between items-end">
                         <div>
                             <h2 class="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-                                <i data-lucide="zap" class="text-yellow-500"></i> Top 10 Cổ Phiếu Đột Biến
+                                <i data-lucide="zap" class="text-yellow-500"></i> Top 10 Cổ Phiếu Tiềm Năng
                             </h2>
-                            <p class="text-slate-400 text-sm">Lọc Top 21-50 (26D Change), RS [75-85] 3 ngày, Close > MA50, Volume > 300K</p>
+                            <p class="text-slate-400 text-sm">Cổ phiếu tiềm năng dựa trên RS [75-90], ROC [10%-20%] > VNINDEX, Close > MA20 > MA50, MA50 hướng lên, Breakout Volume & có Tín hiệu MUA</p>
                         </div>
                     </div>
 
@@ -133,12 +127,15 @@
                                 <thead class="bg-slate-800/80 backdrop-blur sticky top-0 z-10 text-xs font-mono tracking-wider text-slate-400 uppercase">
                                     <tr>
                                         <th class="py-4 px-4 text-center w-16">#</th>
-                                        <th class="py-4 px-4 w-32">Mã CP</th>
-                                        <th class="py-4 px-4 text-right">26D Change</th>
-                                        <th class="py-4 px-4 text-right">MA50</th>
+                                        <th class="py-4 px-4 w-28">Mã CP</th>
                                         <th class="py-4 px-4 text-right">Close</th>
                                         <th class="py-4 px-4 text-right">Volume</th>
-                                        <th id="req2-date1" class="py-4 px-4 text-right text-yellow-400">RS Gần Nhất</th>
+                                        <th class="py-4 px-4 text-right">ROC 26%</th>
+                                        <th class="py-4 px-4 text-right">MA20</th>
+                                        <th class="py-4 px-4 text-right">MA50</th>
+                                        <th class="py-4 px-4 text-right">MA50-TB5D</th>
+                                        <th class="py-4 px-4 text-right">RS TB 3D</th>
+                                        <th class="py-4 px-4 text-right text-yellow-400">S-Score</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-req2" class="text-sm">
@@ -187,20 +184,12 @@
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="modal-backdrop"></div>
         <div class="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black max-w-2xl w-full p-6 animate-scale-up">
             <h3 class="text-xl font-bold text-white mb-1">Cấu hình Dữ liệu</h3>
-            <p class="text-sm text-slate-400 mb-6">Cập nhật link Google Sheets chứa dữ liệu nguồn. Quyền truy cập sheet cần được cấp "Anyone with the link can view".</p>
+            <p class="text-sm text-slate-400 mb-6">Cập nhật link Google Sheet chính chứa dữ liệu nguồn. Quyền truy cập sheet cần được cấp "Anyone with the link can view".</p>
             
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-mono text-emerald-400 mb-1">DATA SHEET 1 (26D Change, Close, MA50, Volume)</label>
-                    <input type="text" id="link-sheet1" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 text-sm focus:outline-none focus:border-emerald-500 transition-colors" placeholder="https://docs.google.com/spreadsheets/d/...">
-                </div>
-                <div>
-                    <label class="block text-xs font-mono text-yellow-400 mb-1">DATA SHEET 2 (RS Rating 3 Ngày)</label>
-                    <input type="text" id="link-sheet2" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 text-sm focus:outline-none focus:border-yellow-500 transition-colors" placeholder="https://docs.google.com/spreadsheets/d/...">
-                </div>
-                <div>
-                    <label class="block text-xs font-mono text-blue-400 mb-1">DATA SHEET 3 (Sức mạnh ngành - Tùy chọn)</label>
-                    <input type="text" id="link-sheet3" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 text-sm focus:outline-none focus:border-blue-500 transition-colors" placeholder="https://docs.google.com/spreadsheets/d/...">
+                    <label class="block text-xs font-mono text-emerald-400 mb-1">LINK GOOGLE SHEET CHÍNH</label>
+                    <input type="text" id="link-sheet" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 text-sm focus:outline-none focus:border-emerald-500 transition-colors" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
                 </div>
             </div>
 

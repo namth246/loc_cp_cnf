@@ -1,12 +1,12 @@
 // Khởi tạo các biến toàn cục
-const DEFAULT_SHEET_1 = "https://docs.google.com/spreadsheets/d/1m72-Px2PwWK3CNV4lu3LiX8McVTUGkrkctDBW73bqDM/edit";
-const DEFAULT_SHEET_2 = "https://docs.google.com/spreadsheets/d/1HE4V8twdmGLUUCFWrQEnNmzWchCf61vzqSuq891XTDc/edit";
-const DEFAULT_SHEET_3 = "";
+const DEFAULT_SHEET = "https://docs.google.com/spreadsheets/d/1ZLx75NBs-OszJ618M4zvrYfhAxWhxz_AdZ87tD9yUkE/edit";
+const GID_DATA_CLEAN = "0";
+const GID_TOP_10 = "1972065177";
+const GID_NGANH = "1950627905";
 
 let dataSheet1 = [];
 let dataSheet2 = [];
 let dataSheet3 = [];
-let vnindexChange = 0;
 
 // === PURE FUNCTIONS FOR FILTERING (TDD Friendly) ===
 
@@ -24,28 +24,26 @@ function parseVol(val) {
  */
 function parseGViz(data) {
     if (!data || !data.table || !data.table.cols || !data.table.rows) return [];
-    const cols = data.table.cols.map(c => c ? (c.label || "") : "");
+    const cols = data.table.cols.map((c, i) => c ? (c.label || c.id || `Col${i}`) : `Col${i}`);
     let rows = data.table.rows.map(row => {
         let obj = {};
         if (row && row.c) {
             cols.forEach((colName, i) => {
-                if (colName && colName.trim() !== "") {
-                    let cell = row.c[i];
-                    let val = "";
-                    if (cell !== null && cell !== undefined) {
-                        if (cell.f !== undefined && cell.f !== null) {
-                            val = cell.f;
-                        } else if (cell.v !== null && cell.v !== undefined) {
-                            val = cell.v;
-                        }
+                let cell = row.c[i];
+                let val = "";
+                if (cell !== null && cell !== undefined) {
+                    if (cell.f !== undefined && cell.f !== null) {
+                        val = cell.f;
+                    } else if (cell.v !== null && cell.v !== undefined) {
+                        val = cell.v;
                     }
-                    obj[colName.trim()] = String(val).trim();
                 }
+                obj[colName.trim()] = String(val).trim();
             });
         }
         return obj;
     });
-    rows.headers = cols.map(c => c.trim()).filter(c => c !== "");
+    rows.headers = cols.map(c => c.trim());
     return rows;
 }
 
@@ -54,14 +52,27 @@ function parseGViz(data) {
  */
 function normalizeSheet1(rawData) {
     return rawData
-        .filter(obj => obj["CP"] || obj["Ticker"])
+        .filter(row => {
+            const ticker = row["Thông tin định danh và Ngành"];
+            return ticker && ticker !== "Cổ Phiếu" && ticker !== "Ticker";
+        })
         .map(row => {
             return {
-                ticker: row["Ticker"] || row["CP"],
-                change26D: parseFloat(row["26D change (%)"]) || 0,
-                close: parseFloat(row["Close"]) || 0,
-                ma50: parseFloat(row["MA50"]) || 0,
-                volume: parseVol(row["Volume"])
+                ticker: row["Thông tin định danh và Ngành"],
+                sector: row["B"] || "",
+                close: parseFloat(row["C"]) || 0,
+                high_tb4d: parseFloat(row["D"]) || 0,
+                volume: parseVol(row["Khối lượng giao dịch"]),
+                vol_tb10d: parseVol(row["F"]),
+                rs1: parseFloat(row["Chỉ Số Sức Mạnh và Biến Động"]) || 0,
+                rs2: parseFloat(row["I"]) || 0,
+                rs3: parseFloat(row["J"]) || 0,
+                rs_avg: parseFloat(row["K"]) || 0,
+                roc26: parseFloat(row["L"]) || 0,
+                ma10: parseFloat(row["Các đường trung bình động"]) || 0,
+                ma20: parseFloat(row["N"]) || 0,
+                ma50: parseFloat(row["O"]) || 0,
+                ma50_tb5d: parseFloat(row["MA50-TB5D"]) || 0
             };
         });
 }
@@ -69,93 +80,87 @@ function normalizeSheet1(rawData) {
 /**
  * Xây dựng RS Map từ Sheet 2 (lấy 3 cột gần nhất)
  */
-function buildRSMap(rawData) {
-    const headers = rawData.headers || (rawData.length > 0 ? Object.keys(rawData[0]) : []);
-    const date1 = headers[3];
-    const date2 = headers[4];
-    const date3 = headers[5];
-
-    let rsMap = {};
+function buildVNIMap(rawData) {
+    let vniMap = {};
     rawData.forEach(row => {
         let ticker = row["CP"];
         if (ticker) {
-            rsMap[ticker] = {
-                rs1: parseFloat(row[date1]) || 0,
-                rs2: parseFloat(row[date2]) || 0,
-                rs3: parseFloat(row[date3]) || 0,
-                dates: [date1, date2, date3]
+            vniMap[ticker] = {
+                rocGreaterVni: row["ROC26 > VNI"] === "TRUE" || row["ROC26 > VNI"] === "True" || row["ROC26 > VNI"] === true
             };
         }
     });
-    return rsMap;
+    return vniMap;
 }
 
 /**
  * Requirement 1: Top 10 cổ phiếu tiếp diễn dòng tiền
  */
-function filterReq1(normSheet1, rsMap, vnidxChange) {
-    // Loại trừ VNINDEX & HNXINDEX
+function filterReq1(normSheet1, vniMap) {
     let valid = normSheet1.filter(s => s.ticker !== "VNINDEX" && s.ticker !== "HNXINDEX");
 
-    // Bước 1: Sắp xếp theo 26D change giảm dần, lấy top 20 cao nhất có 26D > VNINDEX
-    valid.sort((a, b) => b.change26D - a.change26D);
-    let top20 = valid.slice(0, 20);
+    let filtered = valid.filter(stock => {
+        if (stock.volume <= 300000) return false;
 
-    let result = top20.filter(stock => {
-        if (stock.change26D <= vnidxChange) return false;
-
-        // Bước 2: RS > 85 trong 3 ngày
-        const rs = rsMap[stock.ticker];
-        if (!rs || rs.rs1 <= 85 || rs.rs2 <= 85 || rs.rs3 <= 85) return false;
-
-        // Bước 3: Volume > 300,000
-        let vol = stock.volume;
-        if (vol < 10000) vol = vol * 1000; // heuristic fix cho định dạng lỗi K
-        if (vol <= 300000) return false;
+        const mapped = vniMap[stock.ticker];
+        const rocGreaterVni = mapped ? mapped.rocGreaterVni : (stock.roc26 > 0);
+        if (!rocGreaterVni) return false;
 
         return true;
     });
 
-    // Bước 4: Sắp xếp theo RS mới nhất giảm dần
-    result.sort((a, b) => (rsMap[b.ticker]?.rs1 || 0) - (rsMap[a.ticker]?.rs1 || 0));
-    return result.slice(0, 10);
+    filtered.sort((a, b) => b.rs1 - a.rs1);
+    return filtered.slice(0, 10);
 }
 
-/**
- * Requirement 2: Top 10 cổ phiếu đột biến
- */
-function filterReq2(normSheet1, rsMap) {
+function filterReq2(normSheet1, vniMap) {
     let valid = normSheet1.filter(s => s.ticker !== "VNINDEX" && s.ticker !== "HNXINDEX");
-    valid.sort((a, b) => b.change26D - a.change26D);
 
-    // Bước 1: Top 21 - 50 (30 cổ phiếu)
-    let top21to50 = valid.slice(20, 50);
-
-    let result = top21to50.filter(stock => {
-        // Bước 2: RS trong khoảng 75-85 trong 3 ngày
-        const rs = rsMap[stock.ticker];
-        if (!rs) return false;
-        if (rs.rs1 < 75 || rs.rs1 > 85 || rs.rs2 < 75 || rs.rs2 > 85 || rs.rs3 < 75 || rs.rs3 > 85) return false;
-
-        // Bước 3: Close > MA50
-        if (stock.close <= stock.ma50) return false;
-
-        // Bước 4: Volume > 300,000
-        let vol = stock.volume;
-        if (vol < 10000) vol = vol * 1000;
-        if (vol <= 300000) return false;
+    let matching = valid.filter(stock => {
+        if (stock.volume <= 300000) return false;
+        if (stock.close <= stock.high_tb4d) return false;
+        if (stock.vol_tb10d <= 0 || (stock.volume / stock.vol_tb10d) <= 1.5) return false;
 
         return true;
     });
 
-    // Bước 5: Sắp xếp theo RS mới nhất giảm dần
-    result.sort((a, b) => (rsMap[b.ticker]?.rs1 || 0) - (rsMap[a.ticker]?.rs1 || 0));
-    return result.slice(0, 10);
+    matching.forEach(stock => {
+        stock.cond1 = stock.volume > 300000;
+
+        const rsAvgIn = stock.rs_avg >= 75 && stock.rs_avg <= 90;
+        const rsDaysIn = stock.rs1 >= 75 && stock.rs1 <= 90 &&
+                          stock.rs2 >= 75 && stock.rs2 <= 90 &&
+                          stock.rs3 >= 75 && stock.rs3 <= 90;
+        stock.cond2 = rsAvgIn && rsDaysIn;
+
+        const mapped = vniMap[stock.ticker];
+        const rocGreaterVni = mapped ? mapped.rocGreaterVni : (stock.roc26 > 0);
+        const rocIn = stock.roc26 >= 10 && stock.roc26 <= 20;
+        stock.cond3 = rocGreaterVni && rocIn;
+
+        stock.cond4 = stock.close > stock.ma20;
+        stock.cond5 = stock.ma20 > stock.ma50;
+        stock.cond6 = stock.ma50_tb5d > 0;
+
+        stock.sScore = [stock.cond1, stock.cond2, stock.cond3, stock.cond4, stock.cond5, stock.cond6].filter(Boolean).length;
+    });
+
+    // Chỉ lấy những cổ phiếu thỏa mãn từ 4 tiêu chí trở lên
+    let filteredMatching = matching.filter(stock => stock.sScore >= 4);
+
+    filteredMatching.sort((a, b) => {
+        if (b.sScore !== a.sScore) {
+            return b.sScore - a.sScore;
+        }
+        return b.rs_avg - a.rs_avg;
+    });
+
+    return filteredMatching.slice(0, 10);
 }
 
 // Export functions for test environment (if applicable)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { parseVol, parseGViz, normalizeSheet1, buildRSMap, filterReq1, filterReq2 };
+    module.exports = { parseVol, parseGViz, normalizeSheet1, buildVNIMap, filterReq1, filterReq2 };
 }
 
 // === DOM AND APP LOGIC ===
@@ -185,11 +190,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        if (btn.dataset.tab === tabId) {
-            btn.classList.add('active', 'border-primary', 'text-primary');
+        const currentTabId = btn.dataset.tab;
+        
+        let activeClasses = ['border-emerald-500', 'text-emerald-400', 'bg-emerald-500/10'];
+        if (currentTabId === 'req2') {
+            activeClasses = ['border-yellow-500', 'text-yellow-400', 'bg-yellow-500/10'];
+        } else if (currentTabId === 'req3') {
+            activeClasses = ['border-blue-500', 'text-blue-400', 'bg-blue-500/10'];
+        }
+
+        if (currentTabId === tabId) {
+            btn.classList.add('active', ...activeClasses);
             btn.classList.remove('border-transparent', 'text-gray-400');
         } else {
-            btn.classList.remove('active', 'border-primary', 'text-primary');
+            btn.classList.remove('active', ...activeClasses);
             btn.classList.add('border-transparent', 'text-gray-400');
         }
     });
@@ -217,30 +231,23 @@ function loadJSONP(url) {
     });
 }
 
-function convertToGVizUrl(url) {
+function convertToGVizUrl(url, gid) {
     if (!url) return "";
-    if (url.includes("/gviz/tq")) return url;
-    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match && match[1]) {
-        let base = `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?headers=1`;
-        const gidMatch = url.match(/[#&]gid=([0-9]+)/);
-        if (gidMatch && gidMatch[1]) {
-            base += `&gid=${gidMatch[1]}`;
+    let base = url;
+    if (url.includes("/gviz/tq")) {
+        base = url.split("?")[0];
+    } else {
+        const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (match && match[1]) {
+            base = `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq`;
         }
-        return base;
     }
-    return url;
+    return `${base}?headers=1&gid=${gid}`;
 }
 
 function saveLinksAndRefresh() {
-    const l1 = document.getElementById('link-sheet1').value.trim();
-    const l2 = document.getElementById('link-sheet2').value.trim();
-    const l3 = document.getElementById('link-sheet3').value.trim();
-
-    if (l1) localStorage.setItem('link_sheet1', l1);
-    if (l2) localStorage.setItem('link_sheet2', l2);
-    if (l3) localStorage.setItem('link_sheet3', l3);
-
+    const link = document.getElementById('link-sheet').value.trim();
+    if (link) localStorage.setItem('link_sheet', link);
     document.getElementById('config-modal').classList.add('hidden');
     fetchDataAndProcess();
 }
@@ -254,39 +261,39 @@ async function fetchDataAndProcess(isSilent = false) {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
     try {
-        const link1 = localStorage.getItem('link_sheet1') || DEFAULT_SHEET_1;
-        const link2 = localStorage.getItem('link_sheet2') || DEFAULT_SHEET_2;
-        const link3 = localStorage.getItem('link_sheet3') || DEFAULT_SHEET_3;
-
-        document.getElementById('link-sheet1').value = link1;
-        document.getElementById('link-sheet2').value = link2;
-        document.getElementById('link-sheet3').value = link3;
+        const mainLink = localStorage.getItem('link_sheet') || DEFAULT_SHEET;
+        document.getElementById('link-sheet').value = mainLink;
 
         const promises = [
-            loadJSONP(convertToGVizUrl(link1)),
-            loadJSONP(convertToGVizUrl(link2))
+            loadJSONP(convertToGVizUrl(mainLink, GID_DATA_CLEAN)),
+            loadJSONP(convertToGVizUrl(mainLink, GID_TOP_10)),
+            loadJSONP(convertToGVizUrl(mainLink, GID_NGANH))
         ];
-        if (link3) promises.push(loadJSONP(convertToGVizUrl(link3)));
 
         const results = await Promise.all(promises);
 
         dataSheet1 = parseGViz(results[0]);
         dataSheet2 = parseGViz(results[1]);
-        dataSheet3 = results[2] ? parseGViz(results[2]) : [];
-
-        // Tìm giá trị VNINDEX
-        const vnindexRow = dataSheet1.find(row => row["Ticker"] === "VNINDEX" || row["CP"] === "VNINDEX");
-        vnindexChange = vnindexRow ? (parseFloat(vnindexRow["26D change (%)"]) || 0) : 0;
-        document.getElementById('vnindex-val').textContent = vnindexChange.toFixed(2) + '%';
+        dataSheet3 = parseGViz(results[2]);
 
         const normSheet1 = normalizeSheet1(dataSheet1);
-        const rsMap = buildRSMap(dataSheet2);
+        const vniMap = buildVNIMap(dataSheet2);
 
-        const resReq1 = filterReq1(normSheet1, rsMap, vnindexChange);
-        const resReq2 = filterReq2(normSheet1, rsMap);
+        // Extract date headers from GID 0
+        const headerRow = dataSheet1.find(row => row["Thông tin định danh và Ngành"] === "Cổ Phiếu");
+        const rsDates = [
+            headerRow ? headerRow["Chỉ Số Sức Mạnh và Biến Động"] : "D1 RS",
+            headerRow ? headerRow["I"] : "D2 RS",
+            headerRow ? headerRow["J"] : "D3 RS"
+        ];
 
-        renderReq1(resReq1, rsMap);
-        renderReq2(resReq2, rsMap);
+
+
+        const resReq1 = filterReq1(normSheet1, vniMap);
+        const resReq2 = filterReq2(normSheet1, vniMap);
+
+        renderReq1(resReq1, rsDates);
+        renderReq2(resReq2);
         renderReq3(dataSheet3);
 
         if (statusText) statusText.innerHTML = '<span class="flex items-center text-green-400"><i data-lucide="check-circle" class="w-4 h-4 mr-2"></i> Đã đồng bộ</span>';
@@ -301,7 +308,7 @@ async function fetchDataAndProcess(isSilent = false) {
 
 // === RENDER FUNCTIONS ===
 
-function renderReq1(data, rsMap) {
+function renderReq1(data, rsDates) {
     const tbody = document.getElementById('tbody-req1');
     tbody.innerHTML = '';
     if (data.length === 0) {
@@ -309,53 +316,81 @@ function renderReq1(data, rsMap) {
         return;
     }
 
-    // Set table headers based on RS dates
-    const someTicker = Object.keys(rsMap)[0];
-    const dates = someTicker ? rsMap[someTicker].dates : ['Gần nhất', 'Trước 1 ngày', 'Trước 2 ngày'];
-    document.getElementById('req1-date1').textContent = dates[0] || 'D1';
-    document.getElementById('req1-date2').textContent = dates[1] || 'D2';
-    document.getElementById('req1-date3').textContent = dates[2] || 'D3';
+    document.getElementById('req1-date1').textContent = rsDates[0] || 'D1 RS';
+    document.getElementById('req1-date2').textContent = rsDates[1] || 'D2 RS';
+    document.getElementById('req1-date3').textContent = rsDates[2] || 'D3 RS';
 
     data.forEach((item, idx) => {
-        const rs = rsMap[item.ticker];
         tbody.innerHTML += `
             <tr class="hover:bg-slate-800/50 transition-colors border-b border-slate-700/50">
                 <td class="py-3 px-4 text-center font-mono text-slate-400">${idx + 1}</td>
                 <td class="py-3 px-4 font-bold text-green-400">${item.ticker}</td>
-                <td class="py-3 px-4 text-right font-mono">${item.change26D.toFixed(2)}%</td>
+                <td class="py-3 px-4 text-right font-mono">${item.roc26.toFixed(2)}%</td>
                 <td class="py-3 px-4 text-right font-mono">${item.close.toFixed(2)}</td>
                 <td class="py-3 px-4 text-right font-mono">${item.volume.toLocaleString()}</td>
-                <td class="py-3 px-4 text-right font-mono text-slate-300">${rs.rs3.toFixed(2)}</td>
-                <td class="py-3 px-4 text-right font-mono text-slate-300">${rs.rs2.toFixed(2)}</td>
-                <td class="py-3 px-4 text-right font-mono font-bold text-green-400">${rs.rs1.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${item.rs3.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono text-slate-300">${item.rs2.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono font-bold text-green-400">${item.rs1.toFixed(2)}</td>
             </tr>
         `;
     });
 }
 
-function renderReq2(data, rsMap) {
+function renderReq2(data) {
     const tbody = document.getElementById('tbody-req2');
     tbody.innerHTML = '';
     if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-500">Không có cổ phiếu thỏa mãn tiêu chí</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-8 text-gray-500">Không có cổ phiếu thỏa mãn tiêu chí (>= 4/6)</td></tr>';
         return;
     }
 
-    const someTicker = Object.keys(rsMap)[0];
-    const dates = someTicker ? rsMap[someTicker].dates : ['Gần nhất'];
-    document.getElementById('req2-date1').textContent = dates[0] || 'D1';
-
     data.forEach((item, idx) => {
-        const rs = rsMap[item.ticker];
         tbody.innerHTML += `
             <tr class="hover:bg-slate-800/50 transition-colors border-b border-slate-700/50">
                 <td class="py-3 px-4 text-center font-mono text-slate-400">${idx + 1}</td>
                 <td class="py-3 px-4 font-bold text-yellow-400">${item.ticker}</td>
-                <td class="py-3 px-4 text-right font-mono">${item.change26D.toFixed(2)}%</td>
-                <td class="py-3 px-4 text-right font-mono">${item.ma50.toFixed(2)}</td>
-                <td class="py-3 px-4 text-right font-mono text-green-400">${item.close.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono">${item.close.toFixed(2)}</td>
                 <td class="py-3 px-4 text-right font-mono">${item.volume.toLocaleString()}</td>
-                <td class="py-3 px-4 text-right font-mono font-bold text-yellow-400">${rs.rs1.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono">${item.roc26.toFixed(2)}%</td>
+                <td class="py-3 px-4 text-right font-mono">${item.ma20.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono">${item.ma50.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono">${item.ma50_tb5d.toFixed(4)}</td>
+                <td class="py-3 px-4 text-right font-mono">${item.rs_avg.toFixed(2)}</td>
+                <td class="py-3 px-4 text-right font-mono font-bold text-yellow-400 relative">
+                    <div class="relative group inline-block cursor-help select-none">
+                        <span class="border-b border-dashed border-yellow-500/50">${item.sScore}/6</span>
+                        <div class="absolute bottom-full right-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700/85 text-xs text-slate-300 rounded-lg p-3 w-60 shadow-2xl z-50 font-sans text-left space-y-1 backdrop-blur-md">
+                            <div class="font-bold text-white mb-1.5 border-b border-slate-800 pb-1 flex items-center justify-between">
+                                <span>Tiêu chí kỹ thuật</span>
+                                <span class="text-yellow-400">${item.sScore}/6</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>1. Vol > 300K:</span>
+                                <span class="${item.cond1 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond1 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>2. RS [75-90] (3P & TB):</span>
+                                <span class="${item.cond2 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond2 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>3. ROC26 > VNI & [10-20%]:</span>
+                                <span class="${item.cond3 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond3 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>4. Giá > MA20:</span>
+                                <span class="${item.cond4 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond4 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>5. MA20 > MA50:</span>
+                                <span class="${item.cond5 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond5 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>6. MA50 Hướng lên:</span>
+                                <span class="${item.cond6 ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${item.cond6 ? 'Đạt' : 'Không'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </td>
             </tr>
         `;
     });
@@ -365,38 +400,44 @@ function renderReq3(data) {
     const tbody = document.getElementById('tbody-req3');
     tbody.innerHTML = '';
 
-    const validData = data.filter(item => Object.values(item).some(v => v !== ""));
+    const validData = data.filter(row => {
+        const sectorEnglish = row["B"];
+        const sectorVietnamese = row["RS Rating"];
+        const avgVal = row["C"];
+        return sectorEnglish && sectorEnglish !== "Row Labels" && 
+               sectorVietnamese && sectorVietnamese !== "NGÀNH" && 
+               avgVal && avgVal !== "";
+    });
+
     if (validData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center py-8 text-gray-500">Chưa có dữ liệu. Vui lòng cấu hình Link Google Sheet 3.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center py-8 text-gray-500">Chưa có dữ liệu hoặc định dạng không đúng.</td></tr>';
         return;
     }
 
-    const keys = data.headers || Object.keys(validData[0]);
-    let colX = keys.find(k => k.trim().toLowerCase() === "ngành") || keys[0];
-    let colY = keys.find(k => k.trim().toLowerCase() === "tb(%)") || keys[1];
-
-    if (!colX || !colY) return;
+    const colX = "Ngành";
+    const colY = "Sức mạnh RS";
 
     document.getElementById('req3-colX').textContent = colX;
     document.getElementById('req3-colY').textContent = colY;
 
     const parseNum = val => parseFloat(String(val).replace(/%/g, '').replace(/,/g, '.').trim()) || 0;
 
-    let sortedData = [...validData].sort((a, b) => parseNum(b[colY]) - parseNum(a[colY]));
-    let maxY = Math.max(...sortedData.map(item => parseNum(item[colY])));
+    let sortedData = [...validData].sort((a, b) => parseNum(b["C"]) - parseNum(a["C"]));
+    let maxY = Math.max(...sortedData.map(item => parseNum(item["C"])));
     if (maxY <= 0) maxY = 100;
 
     sortedData.forEach((item, idx) => {
-        const yVal = parseNum(item[colY]);
+        const yVal = parseNum(item["C"]);
         const width = Math.min(100, Math.max(0, (yVal / maxY) * 100));
+        const displayName = item["RS Rating"] || item["B"];
 
         tbody.innerHTML += `
             <tr class="hover:bg-slate-800/50 transition-colors border-b border-slate-700/50 relative">
                 <td class="py-3 px-4 text-center font-mono text-slate-400 relative z-10">${idx + 1}</td>
-                <td class="py-3 px-4 font-bold text-blue-400 relative z-10">${item[colX] || ''}</td>
+                <td class="py-3 px-4 font-bold text-blue-400 relative z-10">${displayName}</td>
                 <td class="py-3 px-4 text-right font-mono relative z-10 w-1/2">
                     <div class="absolute right-4 top-2 bottom-2 bg-blue-500/20 rounded z-0" style="width: ${width}%;"></div>
-                    <span class="relative z-10 pr-2">${item[colY] || ''}</span>
+                    <span class="relative z-10 pr-2">${yVal.toFixed(2)}%</span>
                 </td>
             </tr>
         `;
